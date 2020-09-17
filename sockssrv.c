@@ -108,7 +108,7 @@ static void dolog(const char* fmt, ...) { }
 static int connect_socks_target(unsigned char *buf, size_t n, struct client *client) {
 	if(n < 5) return -EC_GENERAL_FAILURE;
 	if(buf[0] != 5) return -EC_GENERAL_FAILURE;
-	if(buf[1] != 1) return -EC_COMMAND_NOT_SUPPORTED; /* we support only CONNECT method */
+	if(buf[1] != 1 && buf[1] != 3) return -EC_COMMAND_NOT_SUPPORTED; /* we support only CONNECT method */
 	if(buf[2] != 0) return -EC_GENERAL_FAILURE; /* malformed packet */
 
 	int af = AF_INET;
@@ -140,7 +140,19 @@ static int connect_socks_target(unsigned char *buf, size_t n, struct client *cli
 	port = (buf[minlen-2] << 8) | buf[minlen-1];
 	/* there's no suitable errorcode in rfc1928 for dns lookup failure */
 	if(resolve(namebuf, port, &remote)) return -EC_GENERAL_FAILURE;
-	int fd = socket(remote->ai_addr->sa_family, SOCK_STREAM, 0);
+
+	int fd = -1;
+	switch(buf[1]) {
+		case 1: /* CMD: CONNECT */
+			fd = socket(remote->ai_addr->sa_family, SOCK_STREAM, 0);
+			break;
+		case 3: /* CMD: UDP ASSOCIATE */
+			fd = socket(remote->ai_addr->sa_family, SOCK_DGRAM, 0);
+			break;
+		default:
+			return -EC_COMMAND_NOT_SUPPORTED;
+			break;
+	}
 	if(fd == -1) {
 		eval_errno:
 		if(fd != -1) close(fd);
